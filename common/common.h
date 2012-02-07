@@ -808,7 +808,7 @@ struct x264_t
         int     b_direct_auto_write; /* analyse direct modes, to use and/or save */
 
         /* lambda values */
-        int     i_trellis_lambda2[2][2]; /* [luma,chroma][inter,intra] */
+        int     i_trellis_lambda2[2]; /* [luma,chroma] */
         int     i_psy_rd_lambda;
         int     i_chroma_lambda2_offset;
 

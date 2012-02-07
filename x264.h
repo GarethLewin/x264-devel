@@ -41,7 +41,7 @@
 
 #include "x264_config.h"
 
-#define X264_BUILD 120
+#define X264_BUILD 121
 
 /* x264_t:
  *      opaque handler for encoder */
@@ -354,6 +354,7 @@ typedef struct x264_param_t
 
         /* the deadzone size that will be used in luma quantization */
         int          i_luma_deadzone[2]; /* {inter, intra} */
+        int          i_chroma_deadzone[2]; /* {inter, intra} */
 
         int          b_psnr;    /* compute and print PSNR stats */
         int          b_ssim;    /* compute and print SSIM stats */

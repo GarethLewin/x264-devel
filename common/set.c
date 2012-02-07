@@ -81,7 +81,8 @@ int x264_cqm_init( x264_t *h )
     int quant8_mf[4][6][64];
     int deadzone[4] = { 32 - h->param.analyse.i_luma_deadzone[1],
                         32 - h->param.analyse.i_luma_deadzone[0],
-                        32 - 11, 32 - 21 };
+                        32 - h->param.analyse.i_chroma_deadzone[1],
+                        32 - h->param.analyse.i_chroma_deadzone[0] };
     int max_qp_err = -1;
     int max_chroma_qp_err = -1;
     int min_qp_err = QP_MAX+1;

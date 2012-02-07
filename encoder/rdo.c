@@ -1083,11 +1083,11 @@ int x264_quant_luma_dc_trellis( x264_t *h, dctcoef *dct, int i_quant_cat, int i_
         return quant_trellis_cabac( h, dct,
             h->quant4_mf[i_quant_cat][i_qp], h->quant4_bias0[i_quant_cat][i_qp],
             h->unquant4_mf[i_quant_cat][i_qp], x264_zigzag_scan4[MB_INTERLACED],
-            ctx_block_cat, h->mb.i_trellis_lambda2[0][b_intra], 0, 0, 1, 16, idx );
+            ctx_block_cat, h->mb.i_trellis_lambda2[0], 0, 0, 1, 16, idx );
 
     return quant_trellis_cavlc( h, dct,
         h->quant4_mf[i_quant_cat][i_qp], h->unquant4_mf[i_quant_cat][i_qp], x264_zigzag_scan4[MB_INTERLACED],
-        DCT_LUMA_DC, h->mb.i_trellis_lambda2[0][b_intra], 0, 0, 1, 16, idx, 0 );
+        DCT_LUMA_DC, h->mb.i_trellis_lambda2[0], 0, 0, 1, 16, idx, 0 );
 }
 
 static const uint8_t x264_zigzag_scan2x2[4] = { 0, 1, 2, 3 };
@@ -1114,11 +1114,11 @@ int x264_quant_chroma_dc_trellis( x264_t *h, dctcoef *dct, int i_qp, int b_intra
         return quant_trellis_cabac( h, dct,
             h->quant4_mf[quant_cat][i_qp], h->quant4_bias0[quant_cat][i_qp],
             h->unquant4_mf[quant_cat][i_qp], zigzag,
-            DCT_CHROMA_DC, h->mb.i_trellis_lambda2[1][b_intra], 0, 1, 1, num_coefs, idx );
+            DCT_CHROMA_DC, h->mb.i_trellis_lambda2[1], 0, 1, 1, num_coefs, idx );
 
     return quant_trellis_cavlc( h, dct,
         h->quant4_mf[quant_cat][i_qp], h->unquant4_mf[quant_cat][i_qp], zigzag,
-        DCT_CHROMA_DC, h->mb.i_trellis_lambda2[1][b_intra], 0, 1, 1, num_coefs, idx, 0 );
+        DCT_CHROMA_DC, h->mb.i_trellis_lambda2[1], 0, 1, 1, num_coefs, idx, 0 );
 }
 
 int x264_quant_4x4_trellis( x264_t *h, dctcoef *dct, int i_quant_cat,
@@ -1130,12 +1130,12 @@ int x264_quant_4x4_trellis( x264_t *h, dctcoef *dct, int i_quant_cat,
         return quant_trellis_cabac( h, dct,
             h->quant4_mf[i_quant_cat][i_qp], h->quant4_bias0[i_quant_cat][i_qp],
             h->unquant4_mf[i_quant_cat][i_qp], x264_zigzag_scan4[MB_INTERLACED],
-            ctx_block_cat, h->mb.i_trellis_lambda2[b_chroma][b_intra], b_ac, b_chroma, 0, 16, idx );
+            ctx_block_cat, h->mb.i_trellis_lambda2[b_chroma], b_ac, b_chroma, 0, 16, idx );
 
     return quant_trellis_cavlc( h, dct,
             h->quant4_mf[i_quant_cat][i_qp], h->unquant4_mf[i_quant_cat][i_qp],
             x264_zigzag_scan4[MB_INTERLACED],
-            ctx_block_cat, h->mb.i_trellis_lambda2[b_chroma][b_intra], b_ac, b_chroma, 0, 16, idx, 0 );
+            ctx_block_cat, h->mb.i_trellis_lambda2[b_chroma], b_ac, b_chroma, 0, 16, idx, 0 );
 }
 
 int x264_quant_8x8_trellis( x264_t *h, dctcoef *dct, int i_quant_cat,
@@ -1146,7 +1146,7 @@ int x264_quant_8x8_trellis( x264_t *h, dctcoef *dct, int i_quant_cat,
         return quant_trellis_cabac( h, dct,
             h->quant8_mf[i_quant_cat][i_qp], h->quant8_bias0[i_quant_cat][i_qp],
             h->unquant8_mf[i_quant_cat][i_qp], x264_zigzag_scan8[MB_INTERLACED],
-            ctx_block_cat, h->mb.i_trellis_lambda2[b_chroma][b_intra], 0, b_chroma, 0, 64, idx );
+            ctx_block_cat, h->mb.i_trellis_lambda2[b_chroma], 0, b_chroma, 0, 64, idx );
     }
 
     /* 8x8 CAVLC is split into 4 4x4 blocks */
@@ -1156,7 +1156,7 @@ int x264_quant_8x8_trellis( x264_t *h, dctcoef *dct, int i_quant_cat,
         int nz = quant_trellis_cavlc( h, dct,
             h->quant8_mf[i_quant_cat][i_qp], h->unquant8_mf[i_quant_cat][i_qp],
             x264_zigzag_scan8[MB_INTERLACED],
-            DCT_LUMA_4x4, h->mb.i_trellis_lambda2[b_chroma][b_intra], 0, b_chroma, 0, 16, idx*4+i, 1 );
+            DCT_LUMA_4x4, h->mb.i_trellis_lambda2[b_chroma], 0, b_chroma, 0, 16, idx*4+i, 1 );
         /* Set up nonzero count for future calls */
         h->mb.cache.non_zero_count[x264_scan8[idx*4+i]] = nz;
         nzaccum |= nz;

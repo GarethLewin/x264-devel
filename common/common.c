@@ -146,8 +146,10 @@ void x264_param_default( x264_param_t *param )
     param->analyse.b_dct_decimate = 1;
     param->analyse.b_transform_8x8 = 1;
     param->analyse.i_trellis = 1;
-    param->analyse.i_luma_deadzone[0] = 21;
-    param->analyse.i_luma_deadzone[1] = 11;
+    param->analyse.i_luma_deadzone[0] = 15;
+    param->analyse.i_luma_deadzone[1] = 15;
+    param->analyse.i_chroma_deadzone[0] = 15;
+    param->analyse.i_chroma_deadzone[1] = 15;
     param->analyse.b_psnr = 0;
     param->analyse.b_ssim = 0;
 
