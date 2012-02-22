@@ -1570,6 +1570,7 @@ static void x264_mb_analyse_inter_p16x8( x264_t *h, x264_mb_analysis_t *a, int i
 
         LOAD_FENC( &m, p_fenc, 0, 8*i );
         l0m->cost = INT_MAX;
+        //fprintf(stderr,"A %p %d\n",l0m, h->mb.i_mb_xy);
         for( int j = 0; j < i_ref8s; j++ )
         {
             const int i_ref = ref8[j];
@@ -1582,7 +1583,7 @@ static void x264_mb_analyse_inter_p16x8( x264_t *h, x264_mb_analysis_t *a, int i
 
             LOAD_HPELS( &m, h->mb.pic.p_fref[0][i_ref], 0, i_ref, 0, 8*i );
             LOAD_WPELS( &m, h->mb.pic.p_fref_w[i_ref], 0, i_ref, 0, 8*i );
-
+        //fprintf(stderr,"B %p\n",l0m);
             x264_macroblock_cache_ref( h, 0, 2*i, 4, 2, 0, i_ref );
             x264_mb_predict_mv( h, 0, 8*i, 4, m.mvp );
             /* We can only take this shortcut if the first search was performed on ref0. */
@@ -1595,7 +1596,7 @@ static void x264_mb_analyse_inter_p16x8( x264_t *h, x264_mb_analysis_t *a, int i
                 x264_me_search( h, &m, mvc, 3 );
 
             m.cost += m.i_ref_cost;
-
+        //fprintf(stderr,"C %p\n",l0m);
             if( m.cost < l0m->cost )
                 h->mc.memcpy_aligned( l0m, &m, sizeof(x264_me_t) );
         }

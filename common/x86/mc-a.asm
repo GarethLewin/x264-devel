@@ -41,6 +41,36 @@ ch_shuf_adj: times 8 db 0
              times 8 db 6
 sq_1: times 1 dq 1
 
+%macro MC_COPY_WTAB 4
+mc_copy_wtab_%1: dd 0,
+                 dd mangle(x264_mc_copy_w4_%2.skip_prologue),
+                 dd mangle(x264_mc_copy_w8_%3.skip_prologue),
+                 dd 0,
+                 dd mangle(x264_mc_copy_w16_%4.skip_prologue)
+%endmacro
+
+MC_COPY_WTAB mmx,mmx,mmx,mmx
+MC_COPY_WTAB sse2,mmx,mmx,sse2
+
+%macro PIXEL_AVG_WTAB 7
+mc_avg_wtab_%1: dd 0,
+                dd mangle(x264_pixel_avg2_w4_%2.skip_prologue),
+                dd mangle(x264_pixel_avg2_w8_%3.skip_prologue),
+                dd mangle(x264_pixel_avg2_w%7_%4.skip_prologue),
+                dd mangle(x264_pixel_avg2_w16_%5.skip_prologue),
+                dd mangle(x264_pixel_avg2_w20_%6.skip_prologue)
+%endmacro
+
+PIXEL_AVG_WTAB mmx2, mmx2, mmx2, mmx2, mmx2, mmx2, 12
+%if ARCH_X86_64 == 0
+PIXEL_AVG_WTAB cache32_mmx2, mmx2, cache32_mmx2, cache32_mmx2, cache32_mmx2, cache32_mmx2, 12
+PIXEL_AVG_WTAB cache64_mmx2, mmx2, cache64_mmx2, cache64_mmx2, cache64_mmx2, cache64_mmx2, 12
+%endif
+PIXEL_AVG_WTAB sse2, mmx2, mmx2, sse2, sse2, sse2, 16
+PIXEL_AVG_WTAB sse2_misalign, mmx2, mmx2, sse2, sse2, sse2_misalign, 16
+PIXEL_AVG_WTAB cache64_sse2, mmx2, cache64_mmx2, cache64_sse2, cache64_sse2, cache64_sse2, 16
+PIXEL_AVG_WTAB cache64_ssse3, mmx2, cache64_mmx2, cache64_ssse3, cache64_ssse3, cache64_sse2, 16
+
 SECTION .text
 
 cextern pb_0
@@ -415,7 +445,8 @@ cglobal mc_weight_w%1, 6,6,8
     lea  r2, [r2+r3*2]
     sub r5d, 2
     jg .loop
-    REP_RET
+    mov eax, r0m
+    RET
 %endmacro
 
 INIT_MMX mmx2
@@ -495,7 +526,8 @@ cglobal mc_offset%2_w%1, 6,6
     lea  r2, [r2+r3*2]
     sub r5d, 2
     jg .loop
-    REP_RET
+    mov eax, r0m
+    RET
 %endmacro
 
 %macro OFFSETPN 1
@@ -836,6 +868,7 @@ cglobal pixel_avg2_w18_sse2, 6,7,6
 ;-----------------------------------------------------------------------------
 %macro AVG2_W8 2
 cglobal pixel_avg2_w%1_mmx2, 6,7
+.skip_prologue:
     sub    r4, r2
     lea    r6, [r4+r3]
 .height_loop:
@@ -849,7 +882,8 @@ cglobal pixel_avg2_w%1_mmx2, 6,7
     lea    r0, [r0+r1*2]
     sub    r5d, 2
     jg     .height_loop
-    REP_RET
+    mov    eax, r0m
+    RET
 %endmacro
 
 INIT_MMX
@@ -858,6 +892,7 @@ AVG2_W8 8, movq
 
 %macro AVG2_W16 2
 cglobal pixel_avg2_w%1_mmx2, 6,7
+.skip_prologue:
     sub    r2, r4
     lea    r6, [r2+r3]
 .height_loop:
@@ -877,13 +912,15 @@ cglobal pixel_avg2_w%1_mmx2, 6,7
     lea    r0, [r0+r1*2]
     sub    r5d, 2
     jg     .height_loop
-    REP_RET
+    mov    eax, r0m
+    RET
 %endmacro
 
 AVG2_W16 12, movd
 AVG2_W16 16, movq
 
 cglobal pixel_avg2_w20_mmx2, 6,7
+.skip_prologue:
     sub    r2, r4
     lea    r6, [r2+r3]
 .height_loop:
@@ -909,9 +946,11 @@ cglobal pixel_avg2_w20_mmx2, 6,7
     lea    r0, [r0+r1*2]
     sub    r5d, 2
     jg     .height_loop
-    REP_RET
+    mov    eax, r0m
+    RET
 
 cglobal pixel_avg2_w16_sse2, 6,7
+.skip_prologue:
     sub    r4, r2
     lea    r6, [r4+r3]
 .height_loop:
@@ -927,10 +966,12 @@ cglobal pixel_avg2_w16_sse2, 6,7
     lea    r0, [r0+r1*2]
     sub    r5d, 2
     jg     .height_loop
-    REP_RET
+    mov    eax, r0m
+    RET
 
 %macro AVG2_W20 1
 cglobal pixel_avg2_w20_%1, 6,7
+.skip_prologue:
     sub    r2, r4
     lea    r6, [r2+r3]
 .height_loop:
@@ -959,7 +1000,8 @@ cglobal pixel_avg2_w20_%1, 6,7
     lea    r0, [r0+r1*2]
     sub    r5d, 2
     jg     .height_loop
-    REP_RET
+    mov    eax, r0m
+    RET
 %endmacro
 
 AVG2_W20 sse2
@@ -974,23 +1016,11 @@ AVG2_W20 sse2_misalign
 ; is no cacheline split, and the MMX workaround if there is.
 
 %macro INIT_SHIFT 2
-    and    eax, 7
-    shl    eax, 3
+    and    r6d, 7
+    shl    r6d, 3
     movd   %1, [sw_64]
-    movd   %2, eax
+    movd   %2, r6d
     psubw  %1, %2
-%endmacro
-
-%macro AVG_CACHELINE_START 0
-    %assign stack_offset 0
-    INIT_SHIFT mm6, mm7
-    mov    eax, r4m
-    INIT_SHIFT mm4, mm5
-    PROLOGUE 6,6
-    and    r2, ~7
-    and    r4, ~7
-    sub    r4, r2
-.height_loop:
 %endmacro
 
 %macro AVG_CACHELINE_LOOP 2
@@ -1010,7 +1040,13 @@ AVG2_W20 sse2_misalign
 
 %macro AVG_CACHELINE_FUNC 2
 pixel_avg2_w%1_cache_mmx2:
-    AVG_CACHELINE_START
+    INIT_SHIFT mm6, mm7
+    mov    r6d, r4d
+    INIT_SHIFT mm4, mm5
+    and    r2, ~7
+    and    r4, ~7
+    sub    r4, r2
+.height_loop:
     AVG_CACHELINE_LOOP 0, movq
 %if %1>8
     AVG_CACHELINE_LOOP 8, movq
@@ -1022,7 +1058,8 @@ pixel_avg2_w%1_cache_mmx2:
     add    r0, r1
     dec    r5d
     jg .height_loop
-    REP_RET
+    mov    eax, r0m
+    RET
 %endmacro
 
 %macro AVG_CACHELINE_CHECK 3 ; width, cacheline, instruction set
@@ -1032,29 +1069,20 @@ pixel_avg2_w%1_cache_mmx2:
 %else
 %define cachesplit pixel_avg2_w%1_cache_mmx2
 %endif
-cglobal pixel_avg2_w%1_cache%2_%3
-    mov    eax, r2m
-    and    eax, %2-1
-    cmp    eax, (%2-%1-(%1 % 8))
+cglobal pixel_avg2_w%1_cache%2_%3, 0,7
+.skip_prologue:
+    mov    r6d, %2-1
+    and    r6d, r2d
+    cmp    r6d, (%2-%1-(%1 % 8))
 %if %1==12||%1==20
-    jbe pixel_avg2_w%1_%3
+    jbe pixel_avg2_w%1_%3.skip_prologue
 %else
-    jb pixel_avg2_w%1_%3
+    jb pixel_avg2_w%1_%3.skip_prologue
 %endif
-%if 0 ; or %1==8 - but the extra branch seems too expensive
-    ja cachesplit
-%if ARCH_X86_64
-    test      r4b, 1
-%else
-    test byte r4m, 1
-%endif
-    jz pixel_avg2_w%1_%3
-%else
-    or     eax, r4m
-    and    eax, 7
-    jz pixel_avg2_w%1_%3
-    mov    eax, r2m
-%endif
+    or     r6d, r4d
+    and    r6d, 7
+    jz pixel_avg2_w%1_%3.skip_prologue
+    mov    r6d, r2d
 %if mmsize==16 || (%1==8 && %2==64)
     AVG_CACHELINE_FUNC %1, %2
 %else
@@ -1116,16 +1144,8 @@ avg_w16_align%1_%2_ssse3:
 %endmacro
 
 cglobal pixel_avg2_w16_cache64_ssse3
-%if 0 ; seems both tests aren't worth it if src1%16==0 is optimized
-    mov   eax, r2m
-    and   eax, 0x3f
-    cmp   eax, 0x30
-    jb x264_pixel_avg2_w16_sse2
-    or    eax, r4m
-    and   eax, 7
-    jz x264_pixel_avg2_w16_sse2
-%endif
-    PROLOGUE 6, 8
+    PROLOGUE 0, 8
+.skip_prologue:
     lea    r6, [r4+r2]
     and    r4, ~0xf
     and    r6, 0x1f
@@ -1140,7 +1160,9 @@ cglobal pixel_avg2_w16_cache64_ssse3
 %else
     lea    r6, [avg_w16_addr + r6]
 %endif
-    TAIL_CALL r6, 1
+    call   r6
+    mov   eax, r0m
+    RET
 
 %assign j 0
 %assign k 1
@@ -1196,9 +1218,10 @@ AVG16_CACHELINE_LOOP_SSSE3 j, k
 ;                  uint8_t *src, intptr_t i_src_stride, int i_height )
 ;-----------------------------------------------------------------------------
 INIT_MMX
-cglobal mc_copy_w4_mmx, 4,6
+cglobal mc_copy_w4_mmx, 5,7
+.skip_prologue:
     FIX_STRIDES r1, r3
-    cmp dword r4m, 4
+    cmp     r4, 4
     lea     r5, [r3*3]
     lea     r4, [r1*3]
     je .end
@@ -1217,6 +1240,7 @@ cglobal mc_copy_w4_mmx, 4,6
 %assign %%w %1*SIZEOF_PIXEL/mmsize
 %if %%w > 0
 cglobal mc_copy_w%1, 5,7,8*(%%w/2)
+.skip_prologue:
     FIX_STRIDES r1, r3
     lea     r6, [r3*3]
     lea     r5, [r1*3]
@@ -1933,3 +1957,162 @@ MC_CHROMA_SSSE3
 INIT_XMM avx
 MC_CHROMA_SSSE3 ; No known AVX CPU will trigger CPU_CACHELINE_64
 %endif ; HIGH_BIT_DEPTH
+
+
+;-----------------------------------------------------------------------------
+; void x264_mc_luma_mmx2( pixel *dst,    int i_dst_stride,\
+;                         pixel *src[4], int i_src_stride,\
+;                         int mvx, int mvy,\
+;                         int i_width, int i_height, const x264_weight_t *weight );
+;-----------------------------------------------------------------------------
+
+
+%if ARCH_X86_64
+
+; TODO...
+
+%else
+
+;%1 = get_ref / mc_luma
+;%2 = avgfunc name
+;%3 = copyfunc name
+%macro MC_LUMA 3
+cglobal %1, 0,7
+    mov    r4, r5m                   ; mvy
+    mov    r1, r4m                   ; mvx
+    mov    r2, 3
+    mov    r3, r3m                   ; i_src_stride
+    mov    r0, r2
+    and    r2, r4                    ; mvy&3
+    sar    r4, 2                     ; mvy>>2
+    and    r0, r1                    ; mvx&3
+    imul   r4, r3                    ; (mvy>>2) * i_src_stride
+    sar    r1, 2                     ; mvx>>2
+    add    r4, r1                    ; offset = (mvy>>2)*i_src_stride + (mvx>>2)
+    lea    r1, [r0+r2*4]             ; qpel_idx = ((mvy&3)<<2) + (mvx&3)
+    add    r2, (1<<31)-3
+    add    r1, r1
+; BMI1 can be used here, but it helps very little, because
+; bextr is a 2-uop instruction on Piledriver.  Check this again
+; when Haswell comes out.
+    mov    r5, 0x54FE5454            ; hpel_ref0
+    sar    r2, 31
+    shr    r5, r1b
+    and    r2, r3                    ; ((mvy&3) == 3) * i_src_stride
+    and    r5, 3
+    test  r1b, 5*2
+    jz .copy
+    mov    r6, 0xBABABA00            ; hpel_ref1
+    inc    r0
+    shr    r6, r1b
+    mov    r1, r2m                   ; src
+    and    r6, 3
+    mov    r5, [r1+r5*4]             ; src[hpel_ref0[qpel_idx]]
+    shr    r0, 2                     ; ((mvx&3) == 3)
+    add    r5, r4                    ; src[hpel_ref0[qpel_idx]] + offset
+    add    r4, [r1+r6*4]             ; src[hpel_ref1[qpel_idx]] + offset
+    add    r2, r5                    ; src1 = src[hpel_ref0[qpel_idx]] + offset + ((mvy&3) == 3) * i_src_stride
+    add    r4, r0                    ; src2 = src[hpel_ref1[qpel_idx]] + offset + ((mvx&3) == 3)
+    mov    r6, r8m                   ; weight
+    mov    r0, r0m                   ; dst
+    mov    r1, r1m                   ; i_dst_stride
+    mov    r5, r7m                   ; height
+%ifidn %1, get_ref
+    mov    r1, [r1]                  ; *i_dst_stride
+%endif
+    cmp dword [r6+44], 0
+    jnz .weightavg
+    mov    r6, r6m                   ; width
+    jmp   [r6+mc_avg_wtab_%2]
+
+ALIGN 16
+.copy:
+    mov    r6, r2m                   ; src
+    add    r4, [r6+r5*4]             ; src[hpel_ref0[qpel_idx]] + offset
+    mov    r6, r8m                   ; weight
+    add    r2, r4                    ; src1 = src[hpel_ref0[qpel_idx]] + offset + ((mvy&3) == 3) * i_src_stride
+    mov    r1, r1m
+    cmp dword [r6+44], 0
+    jnz .weightcopy
+%ifidn %1, mc_luma
+    mov    r5, r6m                   ; width
+    mov    r0, r0m                   ; dst
+    mov    r4, r7m                   ; height
+    jmp   [r5+mc_copy_wtab_%3]
+%else
+    mov  [r1], r3                    ; *i_dst_stride = i_src_stride
+    mov   eax, r2                    ; return src1
+    RET
+%endif
+
+ALIGN 16
+.weightcopy:
+%ifidn %1, get_ref
+    mov    r1, [r1]
+    mov   r1m, r1
+%endif
+    mov   r2m, r2                    ; src1
+    mov   r4m, r6
+    mov   eax, [r6+44]
+    mov    r5, r7m                   ; height
+    mov    r6, r6m                   ; width
+    mov   r5m, r5
+    mov   eax, [eax+r6]              ; weightfn[i_width>>2]
+    pop    r6
+    pop    r5
+    pop    r4
+    pop    r3
+    jmp   eax
+
+ALIGN 16
+.weightavg:
+; Stack frame for weightfn: [return to caller], dst, dst_stride, dst, dst_stride, weight, height
+    mov   r0m, r0
+    mov   r1m, r1
+    mov   r2m, r0
+    mov   r3m, r1
+    mov   r4m, r6
+    mov   r5m, r5
+    mov    r6, r6m                   ; width
+
+; Stack frame for avg: 16 bytes of garbage, [return to here]
+    call .weightavgcall
+    mov    r6, r8m
+    mov   eax, r6m
+    add   eax, [r6+44]
+    pop    r6
+    pop    r5
+    pop    r4
+    pop    r3
+    jmp  [eax]                       ; weightfn[i_width>>2]
+
+ALIGN 16
+.weightavgcall:
+    sub   rsp, 16                    ; mc_avg's callee-saved regs
+    jmp [r6+mc_avg_wtab_%2]
+%endmacro
+
+%endif
+
+%if ARCH_X86_64 == 0
+INIT_MMX mmx2
+MC_LUMA mc_luma, mmx2, mmx
+MC_LUMA get_ref, mmx2, mmx
+INIT_MMX cache32, mmx2
+MC_LUMA get_ref, cache32_mmx2, mmx
+MC_LUMA mc_luma, cache32_mmx2, mmx
+INIT_MMX cache64, mmx2
+MC_LUMA get_ref, cache64_mmx2, mmx
+MC_LUMA mc_luma, cache64_mmx2, mmx
+%endif
+INIT_XMM sse2
+MC_LUMA mc_luma, sse2, sse2
+MC_LUMA get_ref, sse2, sse2
+INIT_XMM sse2, misalign
+MC_LUMA get_ref, sse2_misalign, sse2
+INIT_XMM cache64, sse2
+MC_LUMA get_ref, cache64_sse2, sse2
+MC_LUMA mc_luma, cache64_sse2, sse2
+INIT_XMM cache64, ssse3
+MC_LUMA get_ref, cache64_ssse3, sse2
+MC_LUMA mc_luma, cache64_ssse3, sse2

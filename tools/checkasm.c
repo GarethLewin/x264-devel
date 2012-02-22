@@ -1062,99 +1062,6 @@ static int check_mc( int cpu_ref, int cpu_new )
     x264_mc_init( cpu_new, &mc_a );
     x264_pixel_init( 0, &pixf );
 
-#define MC_TEST_LUMA( w, h ) \
-        if( mc_a.mc_luma != mc_ref.mc_luma && !(w&(w-1)) && h<=16 ) \
-        { \
-            const x264_weight_t *weight = x264_weight_none; \
-            set_func_name( "mc_luma_%dx%d", w, h ); \
-            used_asm = 1; \
-            for( int i = 0; i < 1024; i++ ) \
-                pbuf3[i] = pbuf4[i] = 0xCD; \
-            call_c( mc_c.mc_luma, dst1, (intptr_t)32, src2, (intptr_t)64, dx, dy, w, h, weight ); \
-            call_a( mc_a.mc_luma, dst2, (intptr_t)32, src2, (intptr_t)64, dx, dy, w, h, weight ); \
-            if( memcmp( pbuf3, pbuf4, 1024 * sizeof(pixel) ) ) \
-            { \
-                fprintf( stderr, "mc_luma[mv(%d,%d) %2dx%-2d]     [FAILED]\n", dx, dy, w, h ); \
-                ok = 0; \
-            } \
-        } \
-        if( mc_a.get_ref != mc_ref.get_ref ) \
-        { \
-            pixel *ref = dst2; \
-            intptr_t ref_stride = 32; \
-            int w_checked = ( ( sizeof(pixel) == 2 && (w == 12 || w == 20)) ? w-2 : w ); \
-            const x264_weight_t *weight = x264_weight_none; \
-            set_func_name( "get_ref_%dx%d", w_checked, h ); \
-            used_asm = 1; \
-            for( int i = 0; i < 1024; i++ ) \
-                pbuf3[i] = pbuf4[i] = 0xCD; \
-            call_c( mc_c.mc_luma, dst1, (intptr_t)32, src2, (intptr_t)64, dx, dy, w, h, weight ); \
-            ref = (pixel*)call_a( mc_a.get_ref, ref, &ref_stride, src2, (intptr_t)64, dx, dy, w, h, weight ); \
-            for( int i = 0; i < h; i++ ) \
-                if( memcmp( dst1+i*32, ref+i*ref_stride, w_checked * sizeof(pixel) ) ) \
-                { \
-                    fprintf( stderr, "get_ref[mv(%d,%d) %2dx%-2d]     [FAILED]\n", dx, dy, w_checked, h ); \
-                    ok = 0; \
-                    break; \
-                } \
-        }
-
-#define MC_TEST_CHROMA( w, h ) \
-        if( mc_a.mc_chroma != mc_ref.mc_chroma ) \
-        { \
-            set_func_name( "mc_chroma_%dx%d", w, h ); \
-            used_asm = 1; \
-            for( int i = 0; i < 1024; i++ ) \
-                pbuf3[i] = pbuf4[i] = 0xCD; \
-            call_c( mc_c.mc_chroma, dst1, dst1+8, (intptr_t)16, src, (intptr_t)64, dx, dy, w, h ); \
-            call_a( mc_a.mc_chroma, dst2, dst2+8, (intptr_t)16, src, (intptr_t)64, dx, dy, w, h ); \
-            /* mc_chroma width=2 may write garbage to the right of dst. ignore that. */ \
-            for( int j = 0; j < h; j++ ) \
-                for( int i = w; i < 8; i++ ) \
-                { \
-                    dst2[i+j*16+8] = dst1[i+j*16+8]; \
-                    dst2[i+j*16  ] = dst1[i+j*16  ]; \
-                } \
-            if( memcmp( pbuf3, pbuf4, 1024 * sizeof(pixel) ) ) \
-            { \
-                fprintf( stderr, "mc_chroma[mv(%d,%d) %2dx%-2d]     [FAILED]\n", dx, dy, w, h ); \
-                ok = 0; \
-            } \
-        }
-    ok = 1; used_asm = 0;
-    for( int dy = -8; dy < 8; dy++ )
-        for( int dx = -128; dx < 128; dx++ )
-        {
-            if( rand()&15 ) continue; // running all of them is too slow
-            MC_TEST_LUMA( 20, 18 );
-            MC_TEST_LUMA( 16, 16 );
-            MC_TEST_LUMA( 16, 8 );
-            MC_TEST_LUMA( 12, 10 );
-            MC_TEST_LUMA( 8, 16 );
-            MC_TEST_LUMA( 8, 8 );
-            MC_TEST_LUMA( 8, 4 );
-            MC_TEST_LUMA( 4, 8 );
-            MC_TEST_LUMA( 4, 4 );
-        }
-    report( "mc luma :" );
-
-    ok = 1; used_asm = 0;
-    for( int dy = -1; dy < 9; dy++ )
-        for( int dx = -128; dx < 128; dx++ )
-        {
-            if( rand()&15 ) continue;
-            MC_TEST_CHROMA( 8, 8 );
-            MC_TEST_CHROMA( 8, 4 );
-            MC_TEST_CHROMA( 4, 8 );
-            MC_TEST_CHROMA( 4, 4 );
-            MC_TEST_CHROMA( 4, 2 );
-            MC_TEST_CHROMA( 2, 4 );
-            MC_TEST_CHROMA( 2, 2 );
-        }
-    report( "mc chroma :" );
-#undef MC_TEST_LUMA
-#undef MC_TEST_CHROMA
-
 #define MC_TEST_AVG( name, weight ) \
 { \
     for( int i = 0; i < 12; i++ ) \
@@ -1254,6 +1161,117 @@ static int check_mc( int cpu_ref, int cpu_new )
         MC_TEST_WEIGHT( offsetsub, weight, (align_cnt++ % 4) );
     }
     report( "mc offsetsub :" );
+
+
+#define MC_TEST_LUMA( w, h ) \
+        if( mc_a.mc_luma != mc_ref.mc_luma && !(w&(w-1)) && h<=16 ) \
+        { \
+            set_func_name( "mc_luma_%dx%d", w, h ); \
+            used_asm = 1; \
+            for( int i = 0; i < 1024; i++ ) \
+                pbuf3[i] = pbuf4[i] = 0xCD; \
+            call_c( mc_c.mc_luma, dst1, (intptr_t)32, src2, (intptr_t)64, dx, dy, w, h, weightc ); \
+            call_a( mc_a.mc_luma, dst2, (intptr_t)32, src2, (intptr_t)64, dx, dy, w, h, weighta ); \
+            if( memcmp( pbuf3, pbuf4, 1024 * sizeof(pixel) ) ) \
+            { \
+                fprintf( stderr, "mc_luma[mv(%d,%d) %2dx%-2d]     [FAILED]\n", dx, dy, w, h ); \
+                ok = 0; \
+            } \
+        } \
+        if( mc_a.get_ref != mc_ref.get_ref ) \
+        { \
+            pixel *ref = dst2; \
+            intptr_t ref_stride = 32; \
+            int w_checked = ( ( sizeof(pixel) == 2 && (w == 12 || w == 20)) ? w-2 : w ); \
+            set_func_name( "get_ref_%dx%d", w_checked, h ); \
+            used_asm = 1; \
+            for( int i = 0; i < 1024; i++ ) \
+                pbuf3[i] = pbuf4[i] = 0xCD; \
+            call_c( mc_c.mc_luma, dst1, (intptr_t)32, src2, (intptr_t)64, dx, dy, w, h, weightc ); \
+            ref = (pixel*)call_a( mc_a.get_ref, ref, &ref_stride, src2, (intptr_t)64, dx, dy, w, h, weighta ); \
+            for( int i = 0; i < h; i++ ) \
+                if( memcmp( dst1+i*32, ref+i*ref_stride, w_checked * sizeof(pixel) ) ) \
+                { \
+                    fprintf( stderr, "get_ref[mv(%d,%d) %2dx%-2d]     [FAILED]\n", dx, dy, w_checked, h ); \
+                    ok = 0; \
+                    break; \
+                } \
+        }
+
+#define MC_TEST_CHROMA( w, h ) \
+        if( mc_a.mc_chroma != mc_ref.mc_chroma ) \
+        { \
+            set_func_name( "mc_chroma_%dx%d", w, h ); \
+            used_asm = 1; \
+            for( int i = 0; i < 1024; i++ ) \
+                pbuf3[i] = pbuf4[i] = 0xCD; \
+            call_c( mc_c.mc_chroma, dst1, dst1+8, (intptr_t)16, src, (intptr_t)64, dx, dy, w, h ); \
+            call_a( mc_a.mc_chroma, dst2, dst2+8, (intptr_t)16, src, (intptr_t)64, dx, dy, w, h ); \
+            /* mc_chroma width=2 may write garbage to the right of dst. ignore that. */ \
+            for( int j = 0; j < h; j++ ) \
+                for( int i = w; i < 8; i++ ) \
+                { \
+                    dst2[i+j*16+8] = dst1[i+j*16+8]; \
+                    dst2[i+j*16  ] = dst1[i+j*16  ]; \
+                } \
+            if( memcmp( pbuf3, pbuf4, 1024 * sizeof(pixel) ) ) \
+            { \
+                fprintf( stderr, "mc_chroma[mv(%d,%d) %2dx%-2d]     [FAILED]\n", dx, dy, w, h ); \
+                ok = 0; \
+            } \
+        }
+    ok = 1; used_asm = 0;
+    for( int use_weight = 0; use_weight < 4; use_weight++ )
+        for( int dy = -8; dy < 8; dy++ )
+            for( int dx = -128; dx < 128; dx++ )
+            {
+                if( rand()&15 ) continue; // running all of them is too slow
+                x264_weight_t weighttmpc;
+                if( use_weight == 1 )
+                    weighttmpc = (x264_weight_t){ .i_scale = rand()&127, .i_denom = 7, .i_offset = (rand()&255) - 128 };
+                else if( use_weight == 2 )
+                    weighttmpc = (x264_weight_t){ .i_scale = 1, .i_denom = 0, .i_offset = -1 };
+                else if( use_weight == 3 )
+                    weighttmpc = (x264_weight_t){ .i_scale = 1, .i_denom = 0, .i_offset = 1 };
+                x264_weight_t weighttmpa = weighttmpc;
+                x264_weight_t *weighta = use_weight ? &weighttmpa : x264_weight_none;
+                x264_weight_t *weightc = use_weight ? &weighttmpc : x264_weight_none;
+                if( use_weight )
+                {
+                    x264_t ha, hc;
+                    ha.mc = mc_a;
+                    hc.mc = mc_c;
+                    mc_a.weight_cache( &ha, weighta );
+                    mc_c.weight_cache( &hc, weightc );
+                }
+                MC_TEST_LUMA( 20, 18 );
+                MC_TEST_LUMA( 16, 16 );
+                MC_TEST_LUMA( 16, 8 );
+                MC_TEST_LUMA( 12, 10 );
+                MC_TEST_LUMA( 8, 16 );
+                MC_TEST_LUMA( 8, 8 );
+                MC_TEST_LUMA( 8, 4 );
+                MC_TEST_LUMA( 4, 8 );
+                MC_TEST_LUMA( 4, 4 );
+            }
+    report( "mc luma :" );
+
+    ok = 1; used_asm = 0;
+    for( int dy = -1; dy < 9; dy++ )
+        for( int dx = -128; dx < 128; dx++ )
+        {
+            if( rand()&15 ) continue;
+            MC_TEST_CHROMA( 8, 8 );
+            MC_TEST_CHROMA( 8, 4 );
+            MC_TEST_CHROMA( 4, 8 );
+            MC_TEST_CHROMA( 4, 4 );
+            MC_TEST_CHROMA( 4, 2 );
+            MC_TEST_CHROMA( 2, 4 );
+            MC_TEST_CHROMA( 2, 2 );
+        }
+    report( "mc chroma :" );
+#undef MC_TEST_LUMA
+#undef MC_TEST_CHROMA
 
     ok = 1; used_asm = 0;
     for( int height = 8; height <= 16; height += 8 )

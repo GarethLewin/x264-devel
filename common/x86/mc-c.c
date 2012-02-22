@@ -161,76 +161,6 @@ LOWRES(ssse3)
 LOWRES(avx)
 LOWRES(xop)
 
-#define PIXEL_AVG_W(width,cpu)\
-void x264_pixel_avg2_w##width##_##cpu( pixel *, intptr_t, pixel *, intptr_t, pixel *, intptr_t );
-/* This declares some functions that don't exist, but that isn't a problem. */
-#define PIXEL_AVG_WALL(cpu)\
-PIXEL_AVG_W(4,cpu); PIXEL_AVG_W(8,cpu); PIXEL_AVG_W(10,cpu); PIXEL_AVG_W(12,cpu); PIXEL_AVG_W(16,cpu); PIXEL_AVG_W(18,cpu); PIXEL_AVG_W(20,cpu);
-
-PIXEL_AVG_WALL(mmx2)
-PIXEL_AVG_WALL(cache32_mmx2)
-PIXEL_AVG_WALL(cache64_mmx2)
-PIXEL_AVG_WALL(cache64_sse2)
-PIXEL_AVG_WALL(sse2)
-PIXEL_AVG_WALL(sse2_misalign)
-PIXEL_AVG_WALL(cache64_ssse3)
-
-#define PIXEL_AVG_WTAB(instr, name1, name2, name3, name4, name5)\
-static void (* const x264_pixel_avg_wtab_##instr[6])( pixel *, intptr_t, pixel *, intptr_t, pixel *, intptr_t ) =\
-{\
-    NULL,\
-    x264_pixel_avg2_w4_##name1,\
-    x264_pixel_avg2_w8_##name2,\
-    x264_pixel_avg2_w12_##name3,\
-    x264_pixel_avg2_w16_##name4,\
-    x264_pixel_avg2_w20_##name5,\
-};
-
-#if HIGH_BIT_DEPTH
-/* we can replace w12/w20 with w10/w18 as only 9/17 pixels in fact are important */
-#define x264_pixel_avg2_w12_mmx2       x264_pixel_avg2_w10_mmx2
-#define x264_pixel_avg2_w20_mmx2       x264_pixel_avg2_w18_mmx2
-#define x264_pixel_avg2_w12_sse2         x264_pixel_avg2_w10_sse2
-#define x264_pixel_avg2_w20_sse2         x264_pixel_avg2_w18_sse2
-#else
-/* w16 sse2 is faster than w12 mmx as long as the cacheline issue is resolved */
-#define x264_pixel_avg2_w12_cache64_ssse3 x264_pixel_avg2_w16_cache64_ssse3
-#define x264_pixel_avg2_w12_cache64_sse2 x264_pixel_avg2_w16_cache64_sse2
-#define x264_pixel_avg2_w12_sse3         x264_pixel_avg2_w16_sse3
-#define x264_pixel_avg2_w12_sse2         x264_pixel_avg2_w16_sse2
-#endif // HIGH_BIT_DEPTH
-
-PIXEL_AVG_WTAB(mmx2, mmx2, mmx2, mmx2, mmx2, mmx2)
-#if HIGH_BIT_DEPTH
-PIXEL_AVG_WTAB(sse2, mmx2, sse2, sse2, sse2, sse2)
-#else // !HIGH_BIT_DEPTH
-#if ARCH_X86
-PIXEL_AVG_WTAB(cache32_mmx2, mmx2, cache32_mmx2, cache32_mmx2, cache32_mmx2, cache32_mmx2)
-PIXEL_AVG_WTAB(cache64_mmx2, mmx2, cache64_mmx2, cache64_mmx2, cache64_mmx2, cache64_mmx2)
-#endif
-PIXEL_AVG_WTAB(sse2, mmx2, mmx2, sse2, sse2, sse2)
-PIXEL_AVG_WTAB(sse2_misalign, mmx2, mmx2, sse2, sse2, sse2_misalign)
-PIXEL_AVG_WTAB(cache64_sse2, mmx2, cache64_mmx2, cache64_sse2, cache64_sse2, cache64_sse2)
-PIXEL_AVG_WTAB(cache64_ssse3, mmx2, cache64_mmx2, cache64_ssse3, cache64_ssse3, cache64_sse2)
-#endif // HIGH_BIT_DEPTH
-
-#define MC_COPY_WTAB(instr, name1, name2, name3)\
-static void (* const x264_mc_copy_wtab_##instr[5])( pixel *, intptr_t, pixel *, intptr_t, int ) =\
-{\
-    NULL,\
-    x264_mc_copy_w4_##name1,\
-    x264_mc_copy_w8_##name2,\
-    NULL,\
-    x264_mc_copy_w16_##name3,\
-};
-
-MC_COPY_WTAB(mmx,mmx,mmx,mmx)
-#if HIGH_BIT_DEPTH
-MC_COPY_WTAB(sse2,mmx,sse2,sse2)
-#else
-MC_COPY_WTAB(sse2,mmx,mmx,sse2)
-#endif
-
 #define MC_WEIGHT_WTAB(function, instr, name1, name2, w12version)\
     static void (* x264_mc_##function##_wtab_##instr[6])( pixel *, intptr_t, pixel *, intptr_t, const x264_weight_t *, int ) =\
 {\
@@ -327,74 +257,32 @@ static void x264_weight_cache_ssse3( x264_t *h, x264_weight_t *w )
 }
 #endif // !HIGH_BIT_DEPTH
 
-static const uint8_t hpel_ref0[16] = {0,1,1,1,0,1,1,1,2,3,3,3,0,1,1,1};
-static const uint8_t hpel_ref1[16] = {0,0,0,0,2,2,3,2,2,2,3,2,2,2,3,2};
+const uint8_t x264_hpel_ref0[16] = {0,1,1,1,0,1,1,1,2,3,3,3,0,1,1,1};
+const uint8_t x264_hpel_ref1[16] = {0,0,0,0,2,2,3,2,2,2,3,2,2,2,3,2};
 
-#define MC_LUMA(name,instr1,instr2)\
-static void mc_luma_##name( pixel *dst,    intptr_t i_dst_stride,\
-                            pixel *src[4], intptr_t i_src_stride,\
-                            int mvx, int mvy,\
-                            int i_width, int i_height, const x264_weight_t *weight )\
-{\
-    int qpel_idx = ((mvy&3)<<2) + (mvx&3);\
-    int offset = (mvy>>2)*i_src_stride + (mvx>>2);\
-    pixel *src1 = src[hpel_ref0[qpel_idx]] + offset + ((mvy&3) == 3) * i_src_stride;\
-    if( qpel_idx & 5 ) /* qpel interpolation needed */\
-    {\
-        pixel *src2 = src[hpel_ref1[qpel_idx]] + offset + ((mvx&3) == 3);\
-        x264_pixel_avg_wtab_##instr1[i_width>>2](\
-                dst, i_dst_stride, src1, i_src_stride,\
-                src2, i_height );\
-        if( weight->weightfn )\
-            weight->weightfn[i_width>>2]( dst, i_dst_stride, dst, i_dst_stride, weight, i_height );\
-    }\
-    else if( weight->weightfn )\
-        weight->weightfn[i_width>>2]( dst, i_dst_stride, src1, i_src_stride, weight, i_height );\
-    else\
-        x264_mc_copy_wtab_##instr2[i_width>>2](dst, i_dst_stride, src1, i_src_stride, i_height );\
-}
+#define MC_LUMA(name)\
+void x264_mc_luma_##name( pixel *dst,    int i_dst_stride,\
+                          pixel *src[4], int i_src_stride,\
+                          int mvx, int mvy,\
+                          int i_width, int i_height, const x264_weight_t *weight );\
 
-MC_LUMA(mmx2,mmx2,mmx)
-MC_LUMA(sse2,sse2,sse2)
+MC_LUMA(mmx2)
+MC_LUMA(sse2)
 #if !HIGH_BIT_DEPTH
 #if ARCH_X86
-MC_LUMA(cache32_mmx2,cache32_mmx2,mmx)
-MC_LUMA(cache64_mmx2,cache64_mmx2,mmx)
+MC_LUMA(cache32_mmx2)
+MC_LUMA(cache64_mmx2)
 #endif
-MC_LUMA(cache64_sse2,cache64_sse2,sse2)
-MC_LUMA(cache64_ssse3,cache64_ssse3,sse2)
+MC_LUMA(cache64_sse2)
+MC_LUMA(cache64_ssse3)
 #endif // !HIGH_BIT_DEPTH
+MC_LUMA(sse2_bmi1)
 
 #define GET_REF(name)\
-static pixel *get_ref_##name( pixel *dst,   intptr_t *i_dst_stride,\
-                              pixel *src[4], intptr_t i_src_stride,\
-                              int mvx, int mvy,\
-                              int i_width, int i_height, const x264_weight_t *weight )\
-{\
-    int qpel_idx = ((mvy&3)<<2) + (mvx&3);\
-    int offset = (mvy>>2)*i_src_stride + (mvx>>2);\
-    pixel *src1 = src[hpel_ref0[qpel_idx]] + offset + ((mvy&3) == 3) * i_src_stride;\
-    if( qpel_idx & 5 ) /* qpel interpolation needed */\
-    {\
-        pixel *src2 = src[hpel_ref1[qpel_idx]] + offset + ((mvx&3) == 3);\
-        x264_pixel_avg_wtab_##name[i_width>>2](\
-                dst, *i_dst_stride, src1, i_src_stride,\
-                src2, i_height );\
-        if( weight->weightfn )\
-            weight->weightfn[i_width>>2]( dst, *i_dst_stride, dst, *i_dst_stride, weight, i_height );\
-        return dst;\
-    }\
-    else if( weight->weightfn )\
-    {\
-        weight->weightfn[i_width>>2]( dst, *i_dst_stride, src1, i_src_stride, weight, i_height );\
-        return dst;\
-    }\
-    else\
-    {\
-        *i_dst_stride = i_src_stride;\
-        return src1;\
-    }\
-}
+pixel *x264_get_ref_##name( pixel *dst,   int *i_dst_stride,\
+                            pixel *src[4], int i_src_stride,\
+                            int mvx, int mvy,\
+                            int i_width, int i_height, const x264_weight_t *weight );\
 
 GET_REF(mmx2)
 GET_REF(sse2)
@@ -407,6 +295,7 @@ GET_REF(sse2_misalign)
 GET_REF(cache64_sse2)
 GET_REF(cache64_ssse3)
 #endif // !HIGH_BIT_DEPTH
+GET_REF(sse2_bmi1)
 
 #define HPEL(align, cpu, cpuv, cpuc, cpuh)\
 void x264_hpel_filter_v_##cpuv( pixel *dst, pixel *src, int16_t *buf, intptr_t stride, intptr_t width);\
@@ -532,8 +421,8 @@ void x264_mc_init_mmx( int cpu, x264_mc_functions_t *pf )
     pf->avg[PIXEL_4x4]   = x264_pixel_avg_4x4_mmx2;
     pf->avg[PIXEL_4x2]   = x264_pixel_avg_4x2_mmx2;
 
-    pf->mc_luma = mc_luma_mmx2;
-    pf->get_ref = get_ref_mmx2;
+    pf->mc_luma = x264_mc_luma_mmx2;
+    pf->get_ref = x264_get_ref_mmx2;
     pf->mc_chroma = x264_mc_chroma_mmx2;
     pf->hpel_filter = x264_hpel_filter_mmx2;
     pf->weight = x264_mc_weight_wtab_mmx2;
@@ -562,8 +451,8 @@ void x264_mc_init_mmx( int cpu, x264_mc_functions_t *pf )
 
     if( cpu&X264_CPU_SSE2_IS_FAST )
     {
-        pf->get_ref = get_ref_sse2;
-        pf->mc_luma = mc_luma_sse2;
+        pf->get_ref = x264_get_ref_sse2;
+        pf->mc_luma = x264_mc_luma_sse2;
         pf->hpel_filter = x264_hpel_filter_sse2;
     }
 
@@ -623,14 +512,14 @@ void x264_mc_init_mmx( int cpu, x264_mc_functions_t *pf )
 #if ARCH_X86 // all x86_64 cpus with cacheline split issues use sse2 instead
     if( cpu&X264_CPU_CACHELINE_32 )
     {
-        pf->mc_luma = mc_luma_cache32_mmx2;
-        pf->get_ref = get_ref_cache32_mmx2;
+        pf->mc_luma = x264_mc_luma_cache32_mmx2;
+        pf->get_ref = x264_get_ref_cache32_mmx2;
         pf->frame_init_lowres_core = x264_frame_init_lowres_core_cache32_mmx2;
     }
     else if( cpu&X264_CPU_CACHELINE_64 )
     {
-        pf->mc_luma = mc_luma_cache64_mmx2;
-        pf->get_ref = get_ref_cache64_mmx2;
+        pf->mc_luma = x264_mc_luma_cache64_mmx2;
+        pf->get_ref = x264_get_ref_cache64_mmx2;
         pf->frame_init_lowres_core = x264_frame_init_lowres_core_cache32_mmx2;
     }
 #endif
@@ -675,16 +564,16 @@ void x264_mc_init_mmx( int cpu, x264_mc_functions_t *pf )
         pf->load_deinterleave_chroma_fdec = x264_load_deinterleave_chroma_fdec_sse2;
         pf->plane_copy_interleave   = x264_plane_copy_interleave_sse2;
         pf->plane_copy_deinterleave = x264_plane_copy_deinterleave_sse2;
-        pf->mc_luma = mc_luma_sse2;
-        pf->get_ref = get_ref_sse2;
+        pf->mc_luma = x264_mc_luma_sse2;
+        pf->get_ref = x264_get_ref_sse2;
         if( cpu&X264_CPU_CACHELINE_64 )
         {
-            pf->mc_luma = mc_luma_cache64_sse2;
-            pf->get_ref = get_ref_cache64_sse2;
+            pf->mc_luma = x264_mc_luma_cache64_sse2;
+            pf->get_ref = x264_get_ref_cache64_sse2;
         }
         if( cpu&X264_CPU_SSE_MISALIGN )
         {
-            pf->get_ref = get_ref_sse2_misalign;
+            pf->get_ref = x264_get_ref_sse2_misalign;
             if( !(cpu&X264_CPU_STACK_MOD4) )
                 pf->mc_chroma = x264_mc_chroma_sse2_misalign;
         }
@@ -716,8 +605,8 @@ void x264_mc_init_mmx( int cpu, x264_mc_functions_t *pf )
     {
         if( !(cpu&X264_CPU_STACK_MOD4) )
             pf->mc_chroma = x264_mc_chroma_ssse3_cache64;
-        pf->mc_luma = mc_luma_cache64_ssse3;
-        pf->get_ref = get_ref_cache64_ssse3;
+        pf->mc_luma = x264_mc_luma_cache64_ssse3;
+        pf->get_ref = x264_get_ref_cache64_ssse3;
 
         /* ssse3 weight is slower on Nehalem, so only assign here. */
         pf->weight_cache = x264_weight_cache_ssse3;
