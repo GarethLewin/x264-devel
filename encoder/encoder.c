@@ -1844,10 +1844,14 @@ static void x264_fdec_filter_row( x264_t *h, int mb_y, int b_inloop )
     int minpix_y = min_y*16 - 4 * !b_start;
     int maxpix_y = mb_y*16 - 4 * !b_end;
     b_deblock &= b_hpel || h->param.b_full_recon;
-    if( h->param.b_sliced_threads && b_start && min_y && !b_inloop )
+    if( h->param.b_sliced_threads )
     {
-        b_deblock = 0;         /* We already deblocked on the inloop pass. */
-        b_measure_quality = 0; /* We already measured quality on the inloop pass. */
+        b_deblock &= b_inloop;         /* We already deblocked on the inloop pass. */
+        b_measure_quality &= b_inloop; /* We already measured quality on the inloop pass. */
+        /* In rows at the start of each slice, except for the top of the frame, we
+         * need to do hpel serially at the end of the encoding process. */
+        if( b_start && min_y )
+            b_hpel &= !b_inloop;
     }
     if( mb_y & SLICE_MBAFF )
         return;
