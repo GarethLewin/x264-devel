@@ -1258,8 +1258,18 @@ x264_t *x264_encoder_open( x264_param_t *param )
         goto fail;
 
     h->thread[0] = h;
-    for( int i = 1; i < h->param.i_threads + !!h->param.i_sync_lookahead; i++ )
-        CHECKED_MALLOC( h->thread[i], sizeof(x264_t) );
+    for( int i = 0; i < h->param.i_threads + !!h->param.i_sync_lookahead; i++ )
+    {
+        if( i )
+            CHECKED_MALLOC( h->thread[i], sizeof(x264_t) );
+        if( i < h->param.i_threads )
+        {
+            if( x264_pthread_mutex_init( &h->thread[i]->mutex, NULL ) )
+                goto fail;
+            if( x264_pthread_cond_init( &h->thread[i]->cv, NULL ) )
+                goto fail;
+        }
+    }
 
     for( int i = 0; i < h->param.i_threads; i++ )
     {
@@ -1848,10 +1858,7 @@ static void x264_fdec_filter_row( x264_t *h, int mb_y, int b_inloop )
     {
         b_deblock &= b_inloop;         /* We already deblocked on the inloop pass. */
         b_measure_quality &= b_inloop; /* We already measured quality on the inloop pass. */
-        /* In rows at the start of each slice, except for the top of the frame, we
-         * need to do hpel serially at the end of the encoding process. */
-        if( b_start && min_y )
-            b_hpel &= !b_inloop;
+        b_hpel &= !b_inloop;
     }
     if( mb_y & SLICE_MBAFF )
         return;
@@ -1872,10 +1879,14 @@ static void x264_fdec_filter_row( x264_t *h, int mb_y, int b_inloop )
                         h->fdec->plane[p]     + i*h->fdec->i_stride[p],
                         h->mb.i_mb_width*16*sizeof(pixel) );
 
+    if( h->fdec->b_kept_as_ref )
+        x264_frame_expand_border( h, h->fdec, min_y );
     if( b_hpel )
     {
         int end = mb_y == h->mb.i_mb_height;
-        x264_frame_expand_border( h, h->fdec, min_y, end );
+        /* Can't do hpel until the previous slice is done encoding. */
+        if( h->param.b_sliced_threads && b_start && h->i_thread_idx > 0 )
+            x264_threadslice_cond_wait( h->thread[h->i_thread_idx-1] );
         if( h->param.analyse.i_subpel_refine )
         {
             x264_frame_filter( h, h->fdec, min_y, end );
@@ -2452,6 +2463,15 @@ reencode:
                                   - h->stat.frame.i_tex_bits
                                   - h->stat.frame.i_mv_bits;
         x264_fdec_filter_row( h, h->i_threadslice_end, 1 );
+
+        if( h->param.b_sliced_threads )
+        {
+            /* Tell the main thread we're done. */
+            x264_threadslice_cond_broadcast( h, 1 );
+            /* Do hpel now */
+            for( int mb_y = h->i_threadslice_start; mb_y <= h->i_threadslice_end; mb_y++ )
+                x264_fdec_filter_row( h, mb_y, 0 );
+        }
     }
 
     return 0;
@@ -2565,26 +2585,21 @@ static int x264_threaded_slices_write( x264_t *h )
 
     x264_threads_distribute_ratecontrol( h );
 
+    /* setup */
+    for( int i = 0; i < h->param.i_threads; i++ )
+    {
+        h->thread[i]->i_thread_idx = i;
+        x264_threadslice_cond_broadcast( h->thread[i], 0 );
+    }
     /* dispatch */
     for( int i = 0; i < h->param.i_threads; i++ )
     {
         x264_threadpool_run( h->threadpool, (void*)x264_slices_write, h->thread[i] );
         h->thread[i]->b_thread_active = 1;
     }
+    /* wait */
     for( int i = 0; i < h->param.i_threads; i++ )
-    {
-        h->thread[i]->b_thread_active = 0;
-        if( (intptr_t)x264_threadpool_wait( h->threadpool, h->thread[i] ) )
-            return -1;
-    }
-
-    /* Go back and fix up the hpel on the borders between slices. */
-    for( int i = 1; i < h->param.i_threads; i++ )
-    {
-        x264_fdec_filter_row( h->thread[i], h->thread[i]->i_threadslice_start + 1, 0 );
-        if( SLICE_MBAFF )
-            x264_fdec_filter_row( h->thread[i], h->thread[i]->i_threadslice_start + 2, 0 );
-    }
+        x264_threadslice_cond_wait( h->thread[i] );
 
     x264_threads_merge_ratecontrol( h );
 
@@ -3095,6 +3110,16 @@ int     x264_encoder_encode( x264_t *h,
     if( i_nal_ref_idc != NAL_PRIORITY_DISPOSABLE )
         h->i_frame_num++;
 
+    /* If applicable, wait for previous frame reconstruction to finish */
+    if( h->param.b_sliced_threads )
+        for( int i = 0; i < h->param.i_threads; i++ )
+            if( h->thread[i]->b_thread_active )
+            {
+                h->thread[i]->b_thread_active = 0;
+                if( (intptr_t)x264_threadpool_wait( h->threadpool, h->thread[i] ) )
+                    return -1;
+            }
+
     /* Write frame */
     h->i_threadslice_start = 0;
     h->i_threadslice_end = h->mb.i_mb_height;
@@ -3385,6 +3410,13 @@ void    x264_encoder_close  ( x264_t *h )
 
     x264_lookahead_delete( h );
 
+    if( h->param.b_sliced_threads )
+        for( int i = 0; i < h->param.i_threads; i++ )
+            if( h->thread[i]->b_thread_active )
+            {
+                h->thread[i]->b_thread_active = 0;
+                x264_threadpool_wait( h->threadpool, h->thread[i] );
+            }
     if( h->param.i_threads > 1 )
         x264_threadpool_delete( h->threadpool );
     if( h->i_thread_frames > 1 )
@@ -3679,7 +3711,7 @@ void    x264_encoder_close  ( x264_t *h )
     x264_free( h->nal_buffer );
     x264_analyse_free_costs( h );
 
-    if( h->i_thread_frames > 1)
+    if( h->i_thread_frames > 1 )
         h = h->thread[h->i_thread_phase];
 
     /* frames */
@@ -3721,7 +3753,9 @@ void    x264_encoder_close  ( x264_t *h )
         }
         x264_macroblock_thread_free( h->thread[i], 0 );
         x264_free( h->thread[i]->out.p_bitstream );
-        x264_free( h->thread[i]->out.nal);
+        x264_free( h->thread[i]->out.nal );
+        //x264_pthread_mutex_destroy( &h->thread[i]->mutex );
+        //x264_pthread_cond_destroy( &h->thread[i]->cv );
         x264_free( h->thread[i] );
     }
 }
