@@ -827,6 +827,9 @@ struct x264_t
             /* extra data required for mbaff in mv prediction */
             int16_t topright_mv[2][3][2];
             int8_t  topright_ref[2][3];
+            
+            /* current mb deblock strength */
+            uint8_t (*deblock_strength)[8][4];
         } cache;
 
         /* */

@@ -623,7 +623,6 @@ void x264_frame_cond_wait( x264_frame_t *frame, int i_lines_completed )
     x264_pthread_mutex_unlock( &frame->mutex );
 }
 
-/* threading */
 void x264_threadslice_cond_broadcast( x264_t *h, int done )
 {
     x264_pthread_mutex_lock( &h->mutex );
